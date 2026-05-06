@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# carve-out 規約: k35 混入を pre-commit で block。
+set -euo pipefail
+ROOT="$(git rev-parse --show-toplevel)"
+exec bash "$ROOT/scripts/check-no-k35.sh"

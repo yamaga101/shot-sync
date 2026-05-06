@@ -1,0 +1,32 @@
+# Gradle
+.gradle/
+build/
+**/build/
+captures/
+.cxx/
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+local.properties
+.kotlin/
+
+# Android signing / keys
+*.jks
+*.keystore
+!debug.keystore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Misc
+.env
+.env.*
+!.env.example
+
+# Node (npm scripts のみ使う、deps はない予定)
+node_modules/
