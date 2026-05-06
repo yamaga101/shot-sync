@@ -260,7 +260,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                if (state.autoSyncEnabled) "ON — Foreground service 監視中"
+                if (state.autoSyncEnabled) "ON — JobScheduler trigger + catch-up"
                 else "OFF",
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.bodyMedium,
@@ -279,7 +279,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
             )
         } else {
             Text(
-                "Screenshots を検知 → Drive instant 送信。",
+                "MediaStore content trigger で OS が wake → catch-up scan → Drive 送信。アプリを開いた時にも必ず追いつき。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -352,9 +352,52 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
         }
     }
 
+    SamsungSettingsCard(
+        onOpenAppDetails = {
+            ContextCompat.startActivity(
+                context,
+                Permissions.appDetailsSettingsIntent(context),
+                null,
+            )
+        },
+    )
+
     DiagnosticsCard()
 
     Spacer(Modifier.height(16.dp))
+}
+
+@Composable
+private fun SamsungSettingsCard(onOpenAppDetails: () -> Unit) {
+    SectionCard(
+        icon = Icons.Filled.Warning,
+        title = "Samsung 設定 (推奨)",
+    ) {
+        Text(
+            "One UI の Deep sleep / 自動最適化に入ると、JobScheduler trigger も WorkManager も遅延 / 取消されます。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text("手動で 1 度だけ設定:", style = MaterialTheme.typography.labelMedium)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "1. アプリ情報 → バッテリー → 「制限なし」",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text(
+            "2. 設定 → デバイスケア → バッテリー → バックグラウンド使用制限 → 「Deep sleeping apps」から shot-sync を除外",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text(
+            "3. 設定 → デバイスケア → 自動最適化 → shot-sync を除外",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(onClick = onOpenAppDetails) {
+            Text("アプリ情報を開く")
+        }
+    }
 }
 
 @Composable
@@ -412,8 +455,14 @@ private fun DiagnosticsCard() {
 private fun StatusBanner(state: jp.gmail.yamaga101.shotsync.ui.UiState) {
     val signed = state.signedInEmail != null
     val syncing = state.autoSyncEnabled && state.permissions.allGreen
+    val nowMs = System.currentTimeMillis()
+    val triggerStaleMs = if (state.lastTriggerAt > 0) nowMs - state.lastTriggerAt else Long.MAX_VALUE
+    val warnStale = syncing && triggerStaleMs > java.util.concurrent.TimeUnit.HOURS.toMillis(6)
     val brush = Brush.linearGradient(
-        listOf(
+        if (warnStale) listOf(
+            MaterialTheme.colorScheme.tertiary,
+            MaterialTheme.colorScheme.secondary,
+        ) else listOf(
             MaterialTheme.colorScheme.primary,
             MaterialTheme.colorScheme.secondary,
         )
@@ -453,6 +502,23 @@ private fun StatusBanner(state: jp.gmail.yamaga101.shotsync.ui.UiState) {
                         )
                     }
                 }
+                if (syncing) {
+                    Text(
+                        text = "Last trigger: ${formatAgo(state.lastTriggerAt, nowMs)}" +
+                            " · Last scan: ${formatAgo(state.lastScanAt, nowMs)}" +
+                            " · Last upload: ${formatAgo(state.lastUploadAt, nowMs)}",
+                        color = Color.White.copy(alpha = 0.95f),
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                    if (warnStale) {
+                        Text(
+                            "⚠ 6 時間以上 trigger が来ていません。Samsung 設定で deep sleep から除外推奨。",
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     StatusPill(
                         label = if (signed) "Auth ✓" else "Auth ✗",
@@ -469,6 +535,18 @@ private fun StatusBanner(state: jp.gmail.yamaga101.shotsync.ui.UiState) {
                 }
             }
         }
+    }
+}
+
+private fun formatAgo(thenMs: Long, nowMs: Long): String {
+    if (thenMs <= 0L) return "—"
+    val diffMs = (nowMs - thenMs).coerceAtLeast(0L)
+    val sec = diffMs / 1000L
+    return when {
+        sec < 60 -> "${sec}s"
+        sec < 3600 -> "${sec / 60}m"
+        sec < 86_400 -> "${sec / 3600}h"
+        else -> "${sec / 86_400}d"
     }
 }
 

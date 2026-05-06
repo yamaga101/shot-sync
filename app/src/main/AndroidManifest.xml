@@ -10,17 +10,18 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
 
-    <!-- Foreground service to keep observer alive when app is closed. -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-
-    <!-- Android 13+ requires runtime permission for sticky notifications. -->
+    <!-- Android 13+ runtime permission for upload-result notifications. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- For uploading large screenshots even on metered networks (user opt-in). -->
+    <!-- Boot-time / package-replace bootstrap to re-schedule MediaStore trigger job. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-    <!-- Foreground service が Doze で殺されないようにバッテリー最適化除外を request する -->
+    <!-- v0.3.0 廃止: 常時 FGS は Android 15/target=35 の dataSync 6h cap +
+         BOOT_COMPLETED 起動制限と本質的に衝突するため削除。catch-up は
+         JobScheduler.addTriggerContentUri + WorkManager で event-driven 化。
+         FOREGROUND_SERVICE / FOREGROUND_SERVICE_DATA_SYNC 削除済。
+         REQUEST_IGNORE_BATTERY_OPTIMIZATIONS は WorkManager / JobScheduler の
+         deferral 抑制目的で継続使用。 -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <application
@@ -45,11 +46,13 @@
             </intent-filter>
         </activity>
 
+        <!-- MediaStore content-URI trigger を OS が wake してくれる JobService。
+             Android 7.0+ の official `ACTION_NEW_PICTURE` 置換経路。
+             dataSync FGS と異なり 24h 6h cap・BOOT_COMPLETED 制限の対象外。 -->
         <service
-            android:name=".UploadForegroundService"
-            android:enabled="true"
-            android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:name=".job.MediaStoreTriggerJobService"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            android:exported="false" />
 
         <receiver
             android:name=".BootReceiver"
@@ -57,6 +60,7 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
     </application>

@@ -9,27 +9,22 @@ import androidx.core.content.getSystemService
 class ShotSyncApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        DiagnosticsLog.attach(this)
         createNotificationChannels()
     }
 
     private fun createNotificationChannels() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val nm = getSystemService<NotificationManager>() ?: return
-        val foregroundChannel = NotificationChannel(
-            CHANNEL_FOREGROUND,
-            "Foreground service",
-            NotificationManager.IMPORTANCE_LOW,
-        ).apply { description = "Screenshot watcher 常駐通知" }
         val resultChannel = NotificationChannel(
             CHANNEL_RESULTS,
             "Upload results",
             NotificationManager.IMPORTANCE_DEFAULT,
         ).apply { description = "アップロード成功 / 失敗" }
-        nm.createNotificationChannels(listOf(foregroundChannel, resultChannel))
+        nm.createNotificationChannels(listOf(resultChannel))
     }
 
     companion object {
-        const val CHANNEL_FOREGROUND = "foreground"
         const val CHANNEL_RESULTS = "results"
     }
 }

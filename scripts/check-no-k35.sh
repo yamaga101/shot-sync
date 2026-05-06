@@ -33,6 +33,7 @@ EXCLUDES=(
     --exclude-dir=build
     --exclude-dir=node_modules
     --exclude-dir=.gradle
+    --exclude-dir=.claude
     --exclude=check-no-k35.sh
     --exclude=system-yamaga101-carveout.md
     --exclude=README.md

@@ -2,6 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("com.google.devtools.ksp")
 }
 
 // standards.md §4.4 — git short SHA を BuildConfig に注入。git 不在時は (unknown) fallback
@@ -24,8 +25,8 @@ android {
         applicationId = "jp.gmail.yamaga101.shotsync"
         minSdk = 28          // S25 Ultra (Android 16) の前世代もカバー
         targetSdk = 35
-        versionCode = 11
-        versionName = "0.2.0"
+        versionCode = 12
+        versionName = "0.3.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // standards.md §4.4
         buildConfigField("String", "GIT_SHA", "\"${gitShortSha()}\"")
@@ -81,8 +82,13 @@ dependencies {
     // WorkManager
     implementation("androidx.work:work-runtime-ktx:2.10.5")
 
-    // DataStore for settings
+    // DataStore for settings + cursor + heartbeats
     implementation("androidx.datastore:datastore-preferences:1.1.7")
+
+    // Room for persistent diagnostics log (rolling 500 / 7d)
+    implementation("androidx.room:room-runtime:2.6.1")
+    implementation("androidx.room:room-ktx:2.6.1")
+    ksp("androidx.room:room-compiler:2.6.1")
 
     // Google Sign-In + Drive
     implementation("com.google.android.gms:play-services-auth:21.4.0")

@@ -22,8 +22,10 @@ import androidx.work.WorkManager
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import jp.gmail.yamaga101.shotsync.DiagnosticsLog
 import jp.gmail.yamaga101.shotsync.Settings
-import jp.gmail.yamaga101.shotsync.UploadForegroundService
+import jp.gmail.yamaga101.shotsync.data.SyncCursorStore
 import jp.gmail.yamaga101.shotsync.drive.DriveAuth
+import jp.gmail.yamaga101.shotsync.job.MediaStoreTriggerJobService
+import jp.gmail.yamaga101.shotsync.work.CatchUpWorker
 import jp.gmail.yamaga101.shotsync.work.UploadWorker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -50,10 +52,17 @@ data class UiState(
     val recent: List<UploadEntry> = emptyList(),
     val permissions: jp.gmail.yamaga101.shotsync.PermissionStatus =
         jp.gmail.yamaga101.shotsync.PermissionStatus(false, false, false),
+    /** JobScheduler content trigger / boot / app-open のいずれかが最後に発火した時刻 (ms epoch、0 = 未発火) */
+    val lastTriggerAt: Long = 0L,
+    /** CatchUpWorker が最後に走った時刻 */
+    val lastScanAt: Long = 0L,
+    /** UploadWorker が最後に成功した時刻 */
+    val lastUploadAt: Long = 0L,
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val settings = Settings(app)
+    private val cursorStore = SyncCursorStore(app)
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
 
@@ -77,6 +86,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
         }
+        viewModelScope.launch {
+            kotlinx.coroutines.flow.combine(
+                cursorStore.lastTriggerAt,
+                cursorStore.lastScanAt,
+                cursorStore.lastUploadAt,
+            ) { trig, scan, upl -> Triple(trig, scan, upl) }
+                .collect { (trig, scan, upl) ->
+                    _state.value = _state.value.copy(
+                        lastTriggerAt = trig,
+                        lastScanAt = scan,
+                        lastUploadAt = upl,
+                    )
+                }
+        }
         refreshSignInState()
     }
 
@@ -86,27 +109,30 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.value = _state.value.copy(signedInEmail = account?.email)
     }
 
-    /** Activity の onResume などで呼んで、現在の OS-level 権限状態を反映する。 */
+    /**
+     * Activity の onResume などで呼んで OS-level 権限状態を反映 + catch-up 起動。
+     * v0.3.0: 常時 FGS は廃止。代わりに JobScheduler content trigger を再 schedule
+     * + CatchUpWorker を 1 回 enqueue (idempotent)。
+     */
     fun refreshPermissions(context: Context) {
         val perms = jp.gmail.yamaga101.shotsync.Permissions.check(context)
         _state.value = _state.value.copy(permissions = perms)
-        if (perms.allGreen) ensureAutoSyncRunning(context)
+        if (perms.allGreen) ensureAutoSyncWired(context)
     }
 
     /**
-     * cold start (アプリが kill された後の再起動) で service が落ちている時の救済。
-     * `autoSyncEnabled=true` && permissions allGreen なら idempotent に start。
-     * 既に live なら startForegroundService は onStartCommand を一度走らせるのみで
-     * onCreate は再呼出しされない (START_STICKY)。
-     * ※ BootReceiver は端末 reboot 時のみ。アプリ単独 swipe-out には対応できない。
+     * autoSync ON かつ permissions allGreen の時に毎回呼ぶ idempotent bootstrap。
+     *  - MediaStore content trigger を再 schedule (JobScheduler 自身が同 ID を置換)
+     *  - CatchUpWorker を 1 回 enqueue (アプリを開いた瞬間に missed image を回収)
+     * 失敗しても黙って次の trigger / 次回 onResume で復旧する。
      */
-    private fun ensureAutoSyncRunning(context: Context) {
+    private fun ensureAutoSyncWired(context: Context) {
         viewModelScope.launch {
             val auto = settings.autoSyncEnabled.first()
-            if (auto) {
-                DiagnosticsLog.info("MainVM", "ensureAutoSyncRunning: start (auto=ON, allGreen)")
-                UploadForegroundService.start(context)
-            }
+            if (!auto) return@launch
+            DiagnosticsLog.info("MainVM", "ensureAutoSyncWired: schedule trigger + enqueue catch-up")
+            MediaStoreTriggerJobService.schedule(context)
+            CatchUpWorker.enqueue(context)
         }
     }
 
@@ -152,31 +178,30 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleAutoSync(context: Context, enabled: Boolean) {
         viewModelScope.launch {
             settings.setAutoSyncEnabled(enabled)
-            if (enabled) UploadForegroundService.start(context)
-            else UploadForegroundService.stop(context)
+            if (enabled) {
+                MediaStoreTriggerJobService.schedule(context)
+                CatchUpWorker.enqueue(context)
+            } else {
+                MediaStoreTriggerJobService.cancel(context)
+            }
         }
     }
 
-    /** Camera 同期 toggle。ON 中の service は新 spec で restart 必要。 */
+    /** Camera 同期 toggle。trigger は単一 (MediaStore.Images 全体)、catch-up scope だけ
+     * 変わるので、enqueue だけし直せばよい。restart 不要。 */
     fun toggleSyncCameraPhotos(context: Context, enabled: Boolean) {
         viewModelScope.launch {
             settings.setSyncCameraPhotos(enabled)
             if (state.value.autoSyncEnabled) {
-                // 観測 spec が変わったので service restart で baseline 取り直し
-                UploadForegroundService.stop(context)
-                UploadForegroundService.start(context)
+                CatchUpWorker.enqueue(context)
             }
         }
     }
 
-    /** Wi-Fi 限定 toggle。次回 enqueue から制約反映。既存 work には影響なし。 */
+    /** Wi-Fi 限定 toggle。次回 catch-up から制約反映。既存 work には影響なし。 */
     fun toggleWifiOnly(context: Context, enabled: Boolean) {
         viewModelScope.launch {
             settings.setWifiOnly(enabled)
-            if (state.value.autoSyncEnabled) {
-                UploadForegroundService.stop(context)
-                UploadForegroundService.start(context)
-            }
         }
     }
 

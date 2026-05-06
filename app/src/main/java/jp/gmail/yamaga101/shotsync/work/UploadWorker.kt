@@ -8,6 +8,7 @@ import androidx.work.WorkerParameters
 import jp.gmail.yamaga101.shotsync.DiagnosticsLog
 import jp.gmail.yamaga101.shotsync.Settings
 import jp.gmail.yamaga101.shotsync.SourceType
+import jp.gmail.yamaga101.shotsync.data.SyncCursorStore
 import jp.gmail.yamaga101.shotsync.drive.DriveAuth
 import jp.gmail.yamaga101.shotsync.drive.DriveUploader
 import kotlinx.coroutines.Dispatchers
@@ -69,6 +70,7 @@ class UploadWorker(
             val drive = DriveAuth.driveClient(applicationContext, account)
             val driveId = DriveUploader.uploadFile(drive, cacheFile, folderId, displayName)
             Settings(applicationContext).setLastUploadedPath(displayName)
+            SyncCursorStore(applicationContext).touchUpload()
             DiagnosticsLog.info("Worker", "✔ uploaded: $displayName (driveId=${driveId.take(12)}…)")
             Result.success(
                 Data.Builder()
