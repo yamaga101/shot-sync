@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.work.CoroutineWorker
 import androidx.work.Data
 import androidx.work.WorkerParameters
+import jp.gmail.yamaga101.shotsync.DiagnosticsLog
 import jp.gmail.yamaga101.shotsync.Settings
 import jp.gmail.yamaga101.shotsync.drive.DriveAuth
 import jp.gmail.yamaga101.shotsync.drive.DriveUploader
@@ -34,12 +35,17 @@ class UploadWorker(
         val uriStr = inputData.getString(KEY_URI)
         val displayName = inputData.getString(KEY_DISPLAY_NAME) ?: "screenshot.jpg"
         val legacyPath = inputData.getString(KEY_LOCAL_PATH)
+        DiagnosticsLog.info("Worker", "start: $displayName")
 
         val account = DriveAuth.lastSignedInAccount(applicationContext)
-            ?: return@withContext fail("not signed in")
+            ?: return@withContext fail("not signed in").also {
+                DiagnosticsLog.error("Worker", "abort: not signed in")
+            }
 
         val (folderId, _, _) = Settings(applicationContext).snapshot()
-        if (folderId.isNullOrBlank()) return@withContext fail("no folder id")
+        if (folderId.isNullOrBlank()) return@withContext fail("no folder id").also {
+            DiagnosticsLog.error("Worker", "abort: no folder id")
+        }
 
         // cache 上の作業ファイル。upload 後に必ず消す。
         val cacheFile: File = try {
@@ -58,6 +64,7 @@ class UploadWorker(
             val drive = DriveAuth.driveClient(applicationContext, account)
             val driveId = DriveUploader.uploadFile(drive, cacheFile, folderId, displayName)
             Settings(applicationContext).setLastUploadedPath(displayName)
+            DiagnosticsLog.info("Worker", "✔ uploaded: $displayName (driveId=${driveId.take(12)}…)")
             Result.success(
                 Data.Builder()
                     .putString(KEY_DRIVE_FILE_ID, driveId)
@@ -66,8 +73,13 @@ class UploadWorker(
             )
         } catch (e: Exception) {
             val msg = e.message ?: e::class.java.simpleName
-            if (runAttemptCount < 3 && msg.contains("network", true)) Result.retry()
-            else fail(msg)
+            if (runAttemptCount < 3 && msg.contains("network", true)) {
+                DiagnosticsLog.warn("Worker", "retry ($runAttemptCount): $msg")
+                Result.retry()
+            } else {
+                DiagnosticsLog.error("Worker", "✗ failed: $msg")
+                fail(msg)
+            }
         } finally {
             // cache のみ削除 (uriStr があった場合のみ)。legacy path は触らない。
             if (uriStr != null && cacheFile.exists()) cacheFile.delete()

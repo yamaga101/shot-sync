@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudOff
@@ -288,7 +289,60 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
         }
     }
 
+    DiagnosticsCard()
+
     Spacer(Modifier.height(16.dp))
+}
+
+@Composable
+private fun DiagnosticsCard() {
+    val entries by DiagnosticsLog.entries.collectAsState()
+    SectionCard(
+        icon = Icons.Filled.BugReport,
+        title = "診断ログ",
+    ) {
+        if (entries.isEmpty()) {
+            Text(
+                "イベント未発生",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            entries.take(20).forEach { e ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp),
+                ) {
+                    Text(
+                        e.timeLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        when (e.severity) {
+                            Severity.INFO -> "•"
+                            Severity.WARN -> "!"
+                            Severity.ERROR -> "✗"
+                        },
+                        color = when (e.severity) {
+                            Severity.INFO -> MaterialTheme.colorScheme.primary
+                            Severity.WARN -> MaterialTheme.colorScheme.tertiary
+                            Severity.ERROR -> MaterialTheme.colorScheme.error
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "${e.tag}: ${e.message}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable

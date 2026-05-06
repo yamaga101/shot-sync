@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Handler
 import android.provider.MediaStore
 import android.util.Log
+import jp.gmail.yamaga101.shotsync.DiagnosticsLog
 
 /**
  * MediaStore.Images に対する ContentObserver。`/Pictures/Screenshots/` 配下に
@@ -37,7 +38,7 @@ class MediaStoreScreenshotObserver(
             true,
             this,
         )
-        Log.i(TAG, "registered, lastSeenId=$lastSeenId")
+        DiagnosticsLog.info(TAG, "registered, lastSeenId=$lastSeenId")
     }
 
     fun stop() {
@@ -50,10 +51,11 @@ class MediaStoreScreenshotObserver(
 
     override fun onChange(selfChange: Boolean, uri: Uri?) {
         super.onChange(selfChange, uri)
+        DiagnosticsLog.info(TAG, "onChange uri=$uri")
         try {
             scanForNew()
         } catch (e: Exception) {
-            Log.e(TAG, "scanForNew failed", e)
+            DiagnosticsLog.error(TAG, "scanForNew failed: ${e::class.simpleName}: ${e.message}")
         }
     }
 
@@ -100,12 +102,14 @@ class MediaStoreScreenshotObserver(
                 newOnes.add(Triple(id, uri, name))
             }
         }
+        if (newOnes.isEmpty()) {
+            DiagnosticsLog.info(TAG, "scan: no new screenshots since id=$lastSeenId")
+        }
         for ((id, uri, name) in newOnes) {
-            Log.i(TAG, "new screenshot id=$id name=$name")
             try {
                 onNewScreenshot(id, uri, name)
             } catch (e: Exception) {
-                Log.e(TAG, "callback threw", e)
+                DiagnosticsLog.error(TAG, "callback threw: ${e::class.simpleName}: ${e.message}")
             }
             if (id > lastSeenId) lastSeenId = id
         }

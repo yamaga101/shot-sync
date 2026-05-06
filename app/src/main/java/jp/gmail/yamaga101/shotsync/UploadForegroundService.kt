@@ -37,8 +37,22 @@ class UploadForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        startForegroundCompat()
-        startObserving()
+        DiagnosticsLog.info(TAG, "onCreate")
+        try {
+            startForegroundCompat()
+            DiagnosticsLog.info(TAG, "startForeground OK")
+        } catch (e: Exception) {
+            DiagnosticsLog.error(TAG, "startForeground FAILED: ${e::class.simpleName}: ${e.message}")
+            // foreground 化に失敗するとサービスが即殺されるので stopSelf
+            stopSelf()
+            return
+        }
+        try {
+            startObserving()
+            DiagnosticsLog.info(TAG, "observer registered")
+        } catch (e: Exception) {
+            DiagnosticsLog.error(TAG, "startObserving FAILED: ${e::class.simpleName}: ${e.message}")
+        }
     }
 
     private fun startForegroundCompat() {
@@ -69,9 +83,9 @@ class UploadForegroundService : Service() {
     private fun startObserving() {
         val handler = Handler(Looper.getMainLooper())
         observer = MediaStoreScreenshotObserver(this, handler) { id, uri, name ->
+            DiagnosticsLog.info(TAG, "observer detected new screenshot id=$id name=$name")
             enqueueUpload(id, uri, name)
         }.also { it.start() }
-        Log.i(TAG, "MediaStore observer started")
     }
 
     private fun enqueueUpload(id: Long, uri: Uri, displayName: String) {
@@ -88,14 +102,14 @@ class UploadForegroundService : Service() {
                     .build()
             )
             .build()
-        // MediaStore _ID をユニークキーに → 同じ screenshot に対する重複 enqueue を抑止
         val unique = UploadWorker.UNIQUE_PREFIX + "id-$id"
         WorkManager.getInstance(applicationContext)
             .enqueueUniqueWork(unique, ExistingWorkPolicy.KEEP, req)
-        Log.i(TAG, "enqueued: $displayName (id=$id)")
+        DiagnosticsLog.info(TAG, "enqueued worker: $displayName (id=$id)")
     }
 
     override fun onDestroy() {
+        DiagnosticsLog.info(TAG, "onDestroy")
         observer?.stop()
         observer = null
         super.onDestroy()
