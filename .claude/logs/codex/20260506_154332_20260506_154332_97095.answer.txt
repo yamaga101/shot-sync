@@ -1,6 +1,0 @@
-(1) `RELATIVE_PATH LIKE 'DCIM/Camera/%'`を主軸に、端末差は`BUCKET_DISPLAY_NAME='Camera'`も併用。逆張りでパス決め打ちは避ける。  
-(2) 設定は「Screenshots」「Camera」別toggle、Drive先は共通root＋種別サブフォルダ推奨。  
-(3) RAW/HEICはMIME許可制、`IS_PENDING=0`待ち。編集後・バーストは別ID扱い、videoは`Images`では拾わない。  
-(4) 写真は位置情報含むので明示同意。quota/重複/従量回線を考え、Wi-Fi限定・充電中・リトライ制御を置く。  
-
-参考: Android [MediaStore](https://developer.android.com/reference/kotlin/android/provider/MediaStore.Images.Media), [写真権限](https://developer.android.com/about/versions/14/changes/partial-photo-video-access?hl=ja), [WorkManager制約](https://developer.android.com/topic/libraries/architecture/workmanager/how-to/define-work?hl=ja)

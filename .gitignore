@@ -30,3 +30,4 @@ Thumbs.db
 
 # Node (npm scripts のみ使う、deps はない予定)
 node_modules/
+.claude/
