@@ -3,6 +3,8 @@ package jp.gmail.yamaga101.shotsync.ui
 import android.app.Application
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.provider.MediaStore
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.Constraints
@@ -16,7 +18,6 @@ import com.google.android.gms.auth.api.signin.GoogleSignIn
 import jp.gmail.yamaga101.shotsync.Settings
 import jp.gmail.yamaga101.shotsync.UploadForegroundService
 import jp.gmail.yamaga101.shotsync.drive.DriveAuth
-import jp.gmail.yamaga101.shotsync.observer.ScreenshotObserver
 import jp.gmail.yamaga101.shotsync.work.UploadWorker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 data class UploadEntry(
     val name: String,
@@ -84,8 +86,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun saveFolderId(id: String) {
-        viewModelScope.launch { settings.setDriveFolderId(id) }
+    fun saveFolderId(id: String, onResult: (String) -> Unit = {}) {
+        viewModelScope.launch {
+            settings.setDriveFolderId(id)
+            onResult(if (id.isBlank()) "folder ID をクリア" else "保存しました: ${id.take(8)}…")
+        }
     }
 
     fun toggleAutoSync(context: Context, enabled: Boolean) {
@@ -96,32 +101,34 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** P1 確認用: /Pictures/Screenshots/ の最新 1 枚を即時 enqueue。 */
+    /**
+     * P1 確認用: /Pictures/Screenshots/ の最新 1 枚を即時 enqueue。
+     * Android 11+ scoped storage で File.listFiles() は使えないので MediaStore 経由で
+     * URI を取得 → ContentResolver で app cache dir にコピー → そのファイル path を
+     * UploadWorker に渡す。READ_MEDIA_IMAGES 権限必須。
+     */
     fun uploadLatestScreenshot(context: Context, onResult: (String) -> Unit) {
         viewModelScope.launch {
-            val latest = withContext(Dispatchers.IO) {
-                ScreenshotObserver.screenshotsFolder()
-                    .listFiles()
-                    ?.filter { it.isFile }
-                    ?.maxByOrNull { it.lastModified() }
+            val cached = withContext(Dispatchers.IO) {
+                copyLatestScreenshotToCache(context)
             }
-            if (latest == null) {
-                onResult("Screenshots フォルダに画像がありません")
+            if (cached == null) {
+                onResult("Screenshots フォルダに画像がありません (権限 / スコープ確認)")
                 return@launch
             }
+            val (file, displayName) = cached
             val req = OneTimeWorkRequestBuilder<UploadWorker>()
                 .setInputData(
-                    Data.Builder().putString(UploadWorker.KEY_LOCAL_PATH, latest.absolutePath).build()
+                    Data.Builder().putString(UploadWorker.KEY_LOCAL_PATH, file.absolutePath).build()
                 )
                 .setConstraints(
                     Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
                 )
                 .build()
-            val unique = UploadWorker.UNIQUE_PREFIX + "manual-" + latest.name
+            val unique = UploadWorker.UNIQUE_PREFIX + "manual-" + displayName
             val wm = WorkManager.getInstance(context)
             wm.enqueueUniqueWork(unique, ExistingWorkPolicy.REPLACE, req)
-            onResult("enqueue: ${latest.name}")
-            // result 観測
+            onResult("enqueue: $displayName")
             wm.getWorkInfoByIdLiveData(req.id).observeForever(object : androidx.lifecycle.Observer<WorkInfo?> {
                 override fun onChanged(info: WorkInfo?) {
                     if (info == null) return
@@ -129,13 +136,42 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         val ok = info.state == WorkInfo.State.SUCCEEDED
                         val err = info.outputData.getString(UploadWorker.KEY_ERROR)
                         _state.value = _state.value.copy(
-                            recent = listOf(UploadEntry(latest.name, ok, err)) + _state.value.recent.take(19)
+                            recent = listOf(UploadEntry(displayName, ok, err)) + _state.value.recent.take(19)
                         )
-                        onResult(if (ok) "✔ uploaded: ${latest.name}" else "✗ failed: ${err ?: "unknown"}")
+                        onResult(if (ok) "✔ uploaded: $displayName" else "✗ failed: ${err ?: "unknown"}")
                         wm.getWorkInfoByIdLiveData(req.id).removeObserver(this)
                     }
                 }
             })
         }
+    }
+
+    private fun copyLatestScreenshotToCache(context: Context): Pair<File, String>? {
+        val collection: Uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        val projection = arrayOf(
+            MediaStore.Images.Media._ID,
+            MediaStore.Images.Media.DISPLAY_NAME,
+            MediaStore.Images.Media.RELATIVE_PATH,
+            MediaStore.Images.Media.DATE_MODIFIED,
+        )
+        // RELATIVE_PATH の例: "Pictures/Screenshots/" / "DCIM/Screenshots/"
+        val selection = "${MediaStore.Images.Media.RELATIVE_PATH} LIKE ?"
+        val args = arrayOf("%Screenshots/%")
+        val sortOrder = "${MediaStore.Images.Media.DATE_MODIFIED} DESC LIMIT 1"
+
+        context.contentResolver.query(collection, projection, selection, args, sortOrder)?.use { c ->
+            if (!c.moveToFirst()) return null
+            val id = c.getLong(c.getColumnIndexOrThrow(MediaStore.Images.Media._ID))
+            val name = c.getString(c.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME))
+            val itemUri = Uri.withAppendedPath(collection, id.toString())
+            val cacheFile = File(context.cacheDir, "upload-$id-$name").apply {
+                if (exists()) delete()
+            }
+            context.contentResolver.openInputStream(itemUri)?.use { input ->
+                cacheFile.outputStream().use { output -> input.copyTo(output) }
+            } ?: return null
+            return cacheFile to name
+        }
+        return null
     }
 }

@@ -130,7 +130,11 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                 singleLine = true,
                 placeholder = { Text("1DBOVzP...") }
             )
-            Button(onClick = { vm.saveFolderId(folderInput.trim()) }) { Text("保存") }
+            Button(onClick = {
+                vm.saveFolderId(folderInput.trim()) { msg ->
+                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                }
+            }) { Text("保存") }
         }
     }
 
