@@ -1,11 +1,11 @@
 package jp.gmail.yamaga101.shotsync
 
 import android.Manifest
-import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -74,19 +74,18 @@ class MainActivity : ComponentActivity() {
 fun MainScreen(vm: MainViewModel = viewModel()) {
     val context = LocalContext.current
     val state by vm.state.collectAsState()
-    val activity = context as ComponentActivity
 
-    // Permission launchers (notification + media)
-    val notifPermLauncher = activity.registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
+    // Activity Result API の launcher は Composable 内で remember 経由で取得しないと
+    // Activity が STARTED 以降に登録できず crash する (registerForActivityResult を
+    // 直接呼ぶと "LifecycleOwners must call register before they are STARTED" 例外)
+    val notifPermLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
     ) { /* result handled implicitly by toggling sync */ }
-    val mediaPermLauncher = activity.registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
+    val mediaPermLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
     ) { /* same */ }
-
-    // Sign-in launcher
-    val signInLauncher = activity.registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
+    val signInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
     ) { result ->
         vm.onSignInResult(context, result.data)
     }
