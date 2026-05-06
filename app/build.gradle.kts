@@ -24,8 +24,8 @@ android {
         applicationId = "jp.gmail.yamaga101.shotsync"
         minSdk = 28          // S25 Ultra (Android 16) の前世代もカバー
         targetSdk = 35
-        versionCode = 10
-        versionName = "0.1.9"
+        versionCode = 11
+        versionName = "0.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // standards.md §4.4
         buildConfigField("String", "GIT_SHA", "\"${gitShortSha()}\"")

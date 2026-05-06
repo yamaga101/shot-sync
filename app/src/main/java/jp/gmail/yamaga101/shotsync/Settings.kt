@@ -17,6 +17,12 @@ private val Context.dataStore by preferencesDataStore(name = "shot_sync_settings
  */
 const val DEFAULT_DRIVE_FOLDER_ID = "1DBOVzP2x8qS8ThsihMutfH_8IgzSMOWa"
 
+/**
+ * Camera (DCIM/Camera/) 用の既定 Drive folder ID。空欄保存中の user は
+ * これに自動 fallback する。明示的に別 ID を保存している user は touch しない。
+ */
+const val DEFAULT_CAMERA_DRIVE_FOLDER_ID = "12y4EpdE_jXuXbi6E0rxpqUblA4t3rCLp"
+
 object SettingsKeys {
     val DRIVE_FOLDER_ID = stringPreferencesKey("drive_folder_id")
     val CAMERA_DRIVE_FOLDER_ID = stringPreferencesKey("camera_drive_folder_id")
@@ -48,7 +54,8 @@ class Settings(private val context: Context) {
         it[SettingsKeys.DRIVE_FOLDER_ID] ?: DEFAULT_DRIVE_FOLDER_ID
     }
     val cameraDriveFolderId: Flow<String?> = context.dataStore.data.map {
-        it[SettingsKeys.CAMERA_DRIVE_FOLDER_ID]
+        val v = it[SettingsKeys.CAMERA_DRIVE_FOLDER_ID]
+        if (v.isNullOrBlank()) DEFAULT_CAMERA_DRIVE_FOLDER_ID else v
     }
     val autoSyncEnabled: Flow<Boolean> = context.dataStore.data.map { it[SettingsKeys.AUTO_SYNC_ENABLED] ?: false }
     val syncCameraPhotos: Flow<Boolean> = context.dataStore.data.map { it[SettingsKeys.SYNC_CAMERA_PHOTOS] ?: false }
@@ -77,7 +84,8 @@ class Settings(private val context: Context) {
         val data = context.dataStore.data.first()
         return SettingsSnapshot(
             driveFolderId = data[SettingsKeys.DRIVE_FOLDER_ID] ?: DEFAULT_DRIVE_FOLDER_ID,
-            cameraDriveFolderId = data[SettingsKeys.CAMERA_DRIVE_FOLDER_ID],
+            cameraDriveFolderId = data[SettingsKeys.CAMERA_DRIVE_FOLDER_ID]
+                ?.takeIf { it.isNotBlank() } ?: DEFAULT_CAMERA_DRIVE_FOLDER_ID,
             autoSyncEnabled = data[SettingsKeys.AUTO_SYNC_ENABLED] ?: false,
             syncCameraPhotos = data[SettingsKeys.SYNC_CAMERA_PHOTOS] ?: false,
             wifiOnly = data[SettingsKeys.WIFI_ONLY] ?: true,

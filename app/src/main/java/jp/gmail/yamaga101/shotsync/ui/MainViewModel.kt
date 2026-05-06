@@ -20,6 +20,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.google.android.gms.auth.api.signin.GoogleSignIn
+import jp.gmail.yamaga101.shotsync.DiagnosticsLog
 import jp.gmail.yamaga101.shotsync.Settings
 import jp.gmail.yamaga101.shotsync.UploadForegroundService
 import jp.gmail.yamaga101.shotsync.drive.DriveAuth
@@ -29,6 +30,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -88,6 +90,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun refreshPermissions(context: Context) {
         val perms = jp.gmail.yamaga101.shotsync.Permissions.check(context)
         _state.value = _state.value.copy(permissions = perms)
+        if (perms.allGreen) ensureAutoSyncRunning(context)
+    }
+
+    /**
+     * cold start (アプリが kill された後の再起動) で service が落ちている時の救済。
+     * `autoSyncEnabled=true` && permissions allGreen なら idempotent に start。
+     * 既に live なら startForegroundService は onStartCommand を一度走らせるのみで
+     * onCreate は再呼出しされない (START_STICKY)。
+     * ※ BootReceiver は端末 reboot 時のみ。アプリ単独 swipe-out には対応できない。
+     */
+    private fun ensureAutoSyncRunning(context: Context) {
+        viewModelScope.launch {
+            val auto = settings.autoSyncEnabled.first()
+            if (auto) {
+                DiagnosticsLog.info("MainVM", "ensureAutoSyncRunning: start (auto=ON, allGreen)")
+                UploadForegroundService.start(context)
+            }
+        }
     }
 
     fun signInIntent(context: Context): Intent = DriveAuth.signInIntent(context)

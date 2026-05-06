@@ -233,7 +233,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
         }) { Text("Screenshots 保存") }
         Spacer(Modifier.height(12.dp))
         Text(
-            "📷 Camera 用 (空欄なら Screenshots と同じ folder)",
+            "📷 Camera 用 (空欄なら default folder)",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -242,7 +242,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
             onValueChange = { cameraFolderInput = it },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
-            placeholder = { Text("(空欄でスクショと同じ)") },
+            placeholder = { Text("(空欄で default: 12y4EpdE...)") },
             shape = RoundedCornerShape(12.dp),
         )
         Spacer(Modifier.height(4.dp))
