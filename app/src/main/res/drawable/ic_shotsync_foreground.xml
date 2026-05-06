@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+shot-sync foreground icon。
+中央に「upload arrow が cloud (Drive) に向かう」motif を白で。
+108x108 viewport の中で safe zone (周囲 18dp) は除外、22..86 の 64x64 範囲に主要要素。
+adaptive icon の mask (circle / squircle) でも切れない位置取り。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Cloud (Drive 形状っぽく丸 3 つ + 底辺) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M38,52
+                         a14,14 0 0 1 13.4,-9.9
+                         a12,12 0 0 1 22.6,3
+                         a10,10 0 0 1 -3.5,19.4
+                         L42,64.5
+                         a8,8 0 0 1 -4,-12.5 Z"/>
+
+    <!-- Up arrow (太め、cloud の中心を貫く) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M48,80
+                         L48,68
+                         L40,68
+                         L54,52
+                         L68,68
+                         L60,68
+                         L60,80 Z"/>
+
+    <!-- 小さい dot 3 個 (上昇する spark) — 動きの印象を足す -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.6"
+        android:pathData="M28,76 m-2,0 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0
+                         M80,72 m-2,0 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0
+                         M82,82 m-1.5,0 a1.5,1.5 0 1,0 3,0 a1.5,1.5 0 1,0 -3,0"/>
+</vector>
