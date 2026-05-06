@@ -98,18 +98,19 @@ class UploadForegroundService : Service() {
 
     private fun startObserving(spec: WatchSpec) {
         val handler = Handler(Looper.getMainLooper())
-        observer = MediaStoreScreenshotObserver(this, handler, spec) { id, uri, name ->
-            DiagnosticsLog.info(TAG, "observer detected new image id=$id name=$name")
-            enqueueUpload(id, uri, name)
+        observer = MediaStoreScreenshotObserver(this, handler, spec) { id, uri, name, source ->
+            DiagnosticsLog.info(TAG, "observer detected new image id=$id name=$name source=$source")
+            enqueueUpload(id, uri, name, source)
         }.also { it.start() }
     }
 
-    private fun enqueueUpload(id: Long, uri: Uri, displayName: String) {
+    private fun enqueueUpload(id: Long, uri: Uri, displayName: String, source: jp.gmail.yamaga101.shotsync.SourceType) {
         val req = OneTimeWorkRequestBuilder<UploadWorker>()
             .setInputData(
                 Data.Builder()
                     .putString(UploadWorker.KEY_URI, uri.toString())
                     .putString(UploadWorker.KEY_DISPLAY_NAME, displayName)
+                    .putString(UploadWorker.KEY_SOURCE, source.name)
                     .build()
             )
             .setConstraints(

@@ -19,6 +19,7 @@ const val DEFAULT_DRIVE_FOLDER_ID = "1DBOVzP2x8qS8ThsihMutfH_8IgzSMOWa"
 
 object SettingsKeys {
     val DRIVE_FOLDER_ID = stringPreferencesKey("drive_folder_id")
+    val CAMERA_DRIVE_FOLDER_ID = stringPreferencesKey("camera_drive_folder_id")
     val AUTO_SYNC_ENABLED = booleanPreferencesKey("auto_sync_enabled")
     val LAST_UPLOADED_PATH = stringPreferencesKey("last_uploaded_path")
     val SYNC_CAMERA_PHOTOS = booleanPreferencesKey("sync_camera_photos")
@@ -27,24 +28,38 @@ object SettingsKeys {
 
 data class SettingsSnapshot(
     val driveFolderId: String?,
+    val cameraDriveFolderId: String?,  // 空欄 → driveFolderId に fallback
     val autoSyncEnabled: Boolean,
     val syncCameraPhotos: Boolean,
     val wifiOnly: Boolean,
     val lastUploadedPath: String?,
-)
+) {
+    /** source type に応じた upload 先 folder ID を返す。 */
+    fun folderIdFor(source: SourceType): String? = when (source) {
+        SourceType.SCREENSHOT -> driveFolderId
+        SourceType.CAMERA -> cameraDriveFolderId?.takeIf { it.isNotBlank() } ?: driveFolderId
+    }
+}
+
+enum class SourceType { SCREENSHOT, CAMERA }
 
 class Settings(private val context: Context) {
     val driveFolderId: Flow<String?> = context.dataStore.data.map {
         it[SettingsKeys.DRIVE_FOLDER_ID] ?: DEFAULT_DRIVE_FOLDER_ID
     }
+    val cameraDriveFolderId: Flow<String?> = context.dataStore.data.map {
+        it[SettingsKeys.CAMERA_DRIVE_FOLDER_ID]
+    }
     val autoSyncEnabled: Flow<Boolean> = context.dataStore.data.map { it[SettingsKeys.AUTO_SYNC_ENABLED] ?: false }
     val syncCameraPhotos: Flow<Boolean> = context.dataStore.data.map { it[SettingsKeys.SYNC_CAMERA_PHOTOS] ?: false }
-    /** default ON: 撮影写真は重いので従量回線で勝手に流したくない (Gemini Pro / GPT-5.5 両推奨) */
     val wifiOnly: Flow<Boolean> = context.dataStore.data.map { it[SettingsKeys.WIFI_ONLY] ?: true }
     val lastUploadedPath: Flow<String?> = context.dataStore.data.map { it[SettingsKeys.LAST_UPLOADED_PATH] }
 
     suspend fun setDriveFolderId(id: String) =
         context.dataStore.edit { it[SettingsKeys.DRIVE_FOLDER_ID] = id }
+
+    suspend fun setCameraDriveFolderId(id: String) =
+        context.dataStore.edit { it[SettingsKeys.CAMERA_DRIVE_FOLDER_ID] = id }
 
     suspend fun setAutoSyncEnabled(enabled: Boolean) =
         context.dataStore.edit { it[SettingsKeys.AUTO_SYNC_ENABLED] = enabled }
@@ -62,6 +77,7 @@ class Settings(private val context: Context) {
         val data = context.dataStore.data.first()
         return SettingsSnapshot(
             driveFolderId = data[SettingsKeys.DRIVE_FOLDER_ID] ?: DEFAULT_DRIVE_FOLDER_ID,
+            cameraDriveFolderId = data[SettingsKeys.CAMERA_DRIVE_FOLDER_ID],
             autoSyncEnabled = data[SettingsKeys.AUTO_SYNC_ENABLED] ?: false,
             syncCameraPhotos = data[SettingsKeys.SYNC_CAMERA_PHOTOS] ?: false,
             wifiOnly = data[SettingsKeys.WIFI_ONLY] ?: true,

@@ -41,6 +41,7 @@ data class UploadEntry(
 data class UiState(
     val signedInEmail: String? = null,
     val driveFolderId: String? = null,
+    val cameraDriveFolderId: String? = null,
     val autoSyncEnabled: Boolean = false,
     val syncCameraPhotos: Boolean = false,
     val wifiOnly: Boolean = true,
@@ -58,18 +59,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             kotlinx.coroutines.flow.combine(
                 settings.driveFolderId,
+                settings.cameraDriveFolderId,
                 settings.autoSyncEnabled,
                 settings.syncCameraPhotos,
                 settings.wifiOnly,
-            ) { id, auto, camera, wifi ->
-                listOf(id, auto, camera, wifi)
+            ) { id, cameraId, auto, camera, wifi ->
+                listOf(id, cameraId, auto, camera, wifi)
             }.collect { values ->
-                @Suppress("UNCHECKED_CAST")
                 _state.value = _state.value.copy(
                     driveFolderId = values[0] as String?,
-                    autoSyncEnabled = values[1] as Boolean,
-                    syncCameraPhotos = values[2] as Boolean,
-                    wifiOnly = values[3] as Boolean,
+                    cameraDriveFolderId = values[1] as String?,
+                    autoSyncEnabled = values[2] as Boolean,
+                    syncCameraPhotos = values[3] as Boolean,
+                    wifiOnly = values[4] as Boolean,
                 )
             }
         }
@@ -114,6 +116,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             settings.setDriveFolderId(id)
             onResult(if (id.isBlank()) "folder ID をクリア" else "保存しました: ${id.take(8)}…")
+        }
+    }
+
+    fun saveCameraFolderId(id: String, onResult: (String) -> Unit = {}) {
+        viewModelScope.launch {
+            settings.setCameraDriveFolderId(id)
+            onResult(
+                if (id.isBlank()) "Camera 用 folder クリア (Screenshots と同じ)"
+                else "Camera folder 保存: ${id.take(8)}…"
+            )
         }
     }
 

@@ -81,6 +81,7 @@ class MainActivity : ComponentActivity() {
                         @OptIn(ExperimentalMaterial3Api::class)
                         TopAppBar(
                             title = {
+                                // standards.md §4: version は header に常時可視。最新かどうか即判別。
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(
                                         imageVector = Icons.Filled.CloudUpload,
@@ -88,9 +89,12 @@ class MainActivity : ComponentActivity() {
                                         tint = MaterialTheme.colorScheme.primary,
                                     )
                                     Spacer(Modifier.width(8.dp))
+                                    Text("shot-sync", fontWeight = FontWeight.SemiBold)
+                                    Spacer(Modifier.width(8.dp))
                                     Text(
-                                        "shot-sync",
-                                        fontWeight = FontWeight.SemiBold,
+                                        "v${BuildConfig.VERSION_NAME} (${BuildConfig.GIT_SHA})",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
                             },
@@ -195,6 +199,9 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
     }
 
     var folderInput by remember(state.driveFolderId) { mutableStateOf(state.driveFolderId ?: "") }
+    var cameraFolderInput by remember(state.cameraDriveFolderId) {
+        mutableStateOf(state.cameraDriveFolderId ?: "")
+    }
     SectionCard(
         icon = Icons.Filled.Folder,
         title = "送り先 Drive folder ID",
@@ -205,6 +212,11 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(8.dp))
+        Text(
+            "📸 Screenshots 用",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         OutlinedTextField(
             value = folderInput,
             onValueChange = { folderInput = it },
@@ -213,12 +225,32 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
             placeholder = { Text("1DBOVzP...") },
             shape = RoundedCornerShape(12.dp),
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(4.dp))
         Button(onClick = {
             vm.saveFolderId(folderInput.trim()) { msg ->
                 Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
             }
-        }) { Text("保存") }
+        }) { Text("Screenshots 保存") }
+        Spacer(Modifier.height(12.dp))
+        Text(
+            "📷 Camera 用 (空欄なら Screenshots と同じ folder)",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedTextField(
+            value = cameraFolderInput,
+            onValueChange = { cameraFolderInput = it },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            placeholder = { Text("(空欄でスクショと同じ)") },
+            shape = RoundedCornerShape(12.dp),
+        )
+        Spacer(Modifier.height(4.dp))
+        Button(onClick = {
+            vm.saveCameraFolderId(cameraFolderInput.trim()) { msg ->
+                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+            }
+        }) { Text("Camera 保存") }
     }
 
     SectionCard(

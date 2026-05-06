@@ -7,6 +7,7 @@ import androidx.work.Data
 import androidx.work.WorkerParameters
 import jp.gmail.yamaga101.shotsync.DiagnosticsLog
 import jp.gmail.yamaga101.shotsync.Settings
+import jp.gmail.yamaga101.shotsync.SourceType
 import jp.gmail.yamaga101.shotsync.drive.DriveAuth
 import jp.gmail.yamaga101.shotsync.drive.DriveUploader
 import kotlinx.coroutines.Dispatchers
@@ -35,7 +36,10 @@ class UploadWorker(
         val uriStr = inputData.getString(KEY_URI)
         val displayName = inputData.getString(KEY_DISPLAY_NAME) ?: "screenshot.jpg"
         val legacyPath = inputData.getString(KEY_LOCAL_PATH)
-        DiagnosticsLog.info("Worker", "start: $displayName")
+        val source = inputData.getString(KEY_SOURCE)?.let {
+            runCatching { SourceType.valueOf(it) }.getOrDefault(SourceType.SCREENSHOT)
+        } ?: SourceType.SCREENSHOT
+        DiagnosticsLog.info("Worker", "start: $displayName ($source)")
 
         val account = DriveAuth.lastSignedInAccount(applicationContext)
             ?: return@withContext fail("not signed in").also {
@@ -43,9 +47,9 @@ class UploadWorker(
             }
 
         val snapshot = Settings(applicationContext).snapshot()
-        val folderId = snapshot.driveFolderId
-        if (folderId.isNullOrBlank()) return@withContext fail("no folder id").also {
-            DiagnosticsLog.error("Worker", "abort: no folder id")
+        val folderId = snapshot.folderIdFor(source)
+        if (folderId.isNullOrBlank()) return@withContext fail("no folder id for source=$source").also {
+            DiagnosticsLog.error("Worker", "abort: no folder id for source=$source")
         }
 
         // cache 上の作業ファイル。upload 後に必ず消す。
@@ -103,6 +107,7 @@ class UploadWorker(
     companion object {
         const val KEY_URI = "uri"
         const val KEY_DISPLAY_NAME = "display_name"
+        const val KEY_SOURCE = "source"  // SourceType.name
         const val KEY_LOCAL_PATH = "local_path"  // legacy
         const val KEY_DRIVE_FILE_ID = "drive_file_id"
         const val KEY_ERROR = "error"

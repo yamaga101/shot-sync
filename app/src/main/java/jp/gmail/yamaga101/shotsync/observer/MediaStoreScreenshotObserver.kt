@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Handler
 import android.provider.MediaStore
 import jp.gmail.yamaga101.shotsync.DiagnosticsLog
+import jp.gmail.yamaga101.shotsync.SourceType
 
 /**
  * 何を watch するかの宣言。Settings 由来の boolean 2 個から構築する。
@@ -41,7 +42,7 @@ class MediaStoreScreenshotObserver(
     private val context: Context,
     handler: Handler,
     private val spec: WatchSpec,
-    private val onNewScreenshot: (id: Long, uri: Uri, displayName: String) -> Unit,
+    private val onNewScreenshot: (id: Long, uri: Uri, displayName: String, source: SourceType) -> Unit,
 ) : ContentObserver(handler) {
 
     @Volatile
@@ -129,9 +130,15 @@ class MediaStoreScreenshotObserver(
         } ?: -1L
     }
 
+    private data class FoundImage(
+        val id: Long,
+        val uri: Uri,
+        val name: String,
+        val source: SourceType,
+    )
+
     private fun scanForNew() {
         if (lastSeenId < 0) {
-            // start() 前 / spec disabled で onChange 来た場合は init だけ
             lastSeenId = currentMaxId()
             return
         }
@@ -142,8 +149,10 @@ class MediaStoreScreenshotObserver(
         val proj = arrayOf(
             MediaStore.Images.Media._ID,
             MediaStore.Images.Media.DISPLAY_NAME,
+            MediaStore.Images.Media.RELATIVE_PATH,
+            MediaStore.Images.Media.BUCKET_DISPLAY_NAME,
         )
-        val newOnes = mutableListOf<Triple<Long, Uri, String>>()
+        val newOnes = mutableListOf<FoundImage>()
         context.contentResolver.query(
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
             proj,
@@ -153,27 +162,39 @@ class MediaStoreScreenshotObserver(
         )?.use { c ->
             val idCol = c.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
             val nameCol = c.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
+            val pathCol = c.getColumnIndexOrThrow(MediaStore.Images.Media.RELATIVE_PATH)
+            val bucketCol = c.getColumnIndexOrThrow(MediaStore.Images.Media.BUCKET_DISPLAY_NAME)
             while (c.moveToNext()) {
                 val id = c.getLong(idCol)
                 val name = c.getString(nameCol) ?: "image-$id.jpg"
+                val relPath = c.getString(pathCol) ?: ""
+                val bucket = c.getString(bucketCol) ?: ""
+                val source = classify(relPath, bucket)
                 val uri = ContentUris.withAppendedId(
                     MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                     id,
                 )
-                newOnes.add(Triple(id, uri, name))
+                newOnes.add(FoundImage(id, uri, name, source))
             }
         }
         if (newOnes.isEmpty()) {
             DiagnosticsLog.info(TAG, "scan: no new since id=$lastSeenId")
         }
-        for ((id, uri, name) in newOnes) {
+        for (item in newOnes) {
             try {
-                onNewScreenshot(id, uri, name)
+                onNewScreenshot(item.id, item.uri, item.name, item.source)
             } catch (e: Exception) {
                 DiagnosticsLog.error(TAG, "callback threw: ${e::class.simpleName}: ${e.message}")
             }
-            if (id > lastSeenId) lastSeenId = id
+            if (item.id > lastSeenId) lastSeenId = item.id
         }
+    }
+
+    /** RELATIVE_PATH と BUCKET から source 種別を決める。両方マッチしない時は SCREENSHOT に倒す。 */
+    private fun classify(relativePath: String, bucket: String): SourceType {
+        val isCamera = relativePath.contains("DCIM/Camera/", ignoreCase = true) ||
+            bucket.equals("Camera", ignoreCase = true)
+        return if (isCamera) SourceType.CAMERA else SourceType.SCREENSHOT
     }
 
     companion object {

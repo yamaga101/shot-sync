@@ -4,6 +4,18 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// standards.md §4.4 — git short SHA を BuildConfig に注入。git 不在時は (unknown) fallback
+fun gitShortSha(): String =
+    try {
+        val proc = ProcessBuilder("git", "rev-parse", "--short", "HEAD")
+            .directory(rootDir)
+            .redirectErrorStream(true)
+            .start()
+        proc.inputStream.bufferedReader().readText().trim().take(7).ifBlank { "unknown" }
+    } catch (e: Exception) {
+        "unknown"
+    }
+
 android {
     namespace = "jp.gmail.yamaga101.shotsync"
     compileSdk = 35
@@ -12,9 +24,11 @@ android {
         applicationId = "jp.gmail.yamaga101.shotsync"
         minSdk = 28          // S25 Ultra (Android 16) の前世代もカバー
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.1.8"
+        versionCode = 10
+        versionName = "0.1.9"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // standards.md §4.4
+        buildConfigField("String", "GIT_SHA", "\"${gitShortSha()}\"")
     }
 
     buildTypes {
@@ -30,7 +44,10 @@ android {
     }
     kotlinOptions { jvmTarget = "21" }
 
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true   // BuildConfig.VERSION_NAME / GIT_SHA を生成
+    }
 
     packaging {
         resources {

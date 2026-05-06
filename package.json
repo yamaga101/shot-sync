@@ -1,7 +1,7 @@
 {
   "name": "shot-sync",
   "private": true,
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Auto-sync /Pictures/Screenshots/ to Google Drive (yamaga101 carve-out)",
   "scripts": {
     "setup-hooks": "git config core.hooksPath .githooks && chmod +x .githooks/pre-commit scripts/check-no-k35.sh scripts/release-apk.sh",
