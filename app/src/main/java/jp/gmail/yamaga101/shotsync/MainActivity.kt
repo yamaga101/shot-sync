@@ -115,7 +115,9 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
     }
 
     // --- Drive folder ID ---
-    var folderInput by remember { mutableStateOf(state.driveFolderId ?: "") }
+    // remember(key) を使って state.driveFolderId が DataStore から後から到着しても
+    // 入力欄に反映されるように。user 編集中は state は変わらないので reset されない。
+    var folderInput by remember(state.driveFolderId) { mutableStateOf(state.driveFolderId ?: "") }
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("送り先 Drive folder ID", style = MaterialTheme.typography.titleMedium)

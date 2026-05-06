@@ -5,8 +5,11 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.Uri
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
@@ -16,16 +19,19 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
-import jp.gmail.yamaga101.shotsync.observer.ScreenshotObserver
+import jp.gmail.yamaga101.shotsync.observer.MediaStoreScreenshotObserver
 import jp.gmail.yamaga101.shotsync.work.UploadWorker
 
 /**
  * 端末再起動・アプリ swipe-out 後も /Pictures/Screenshots/ を watch するための
  * Foreground service。検知したら WorkManager に upload を enqueue する。
+ *
+ * 監視は MediaStore ContentObserver 経由。Android 11+ scoped storage 環境で
+ * FileObserver は使えないため。
  */
 class UploadForegroundService : Service() {
 
-    private var observer: ScreenshotObserver? = null
+    private var observer: MediaStoreScreenshotObserver? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -44,7 +50,7 @@ class UploadForegroundService : Service() {
         )
         val n = NotificationCompat.Builder(this, ShotSyncApp.CHANNEL_FOREGROUND)
             .setContentTitle("shot-sync 監視中")
-            .setContentText("/Pictures/Screenshots/ を watch 中")
+            .setContentText("Screenshots を Drive に自動転送")
             .setSmallIcon(android.R.drawable.stat_sys_upload)
             .setOngoing(true)
             .setContentIntent(pi)
@@ -61,21 +67,19 @@ class UploadForegroundService : Service() {
     }
 
     private fun startObserving() {
-        val folder = ScreenshotObserver.screenshotsFolder()
-        if (!folder.exists()) {
-            Log.w(TAG, "screenshots folder not found: $folder")
-        }
-        observer = ScreenshotObserver(folder) { file ->
-            enqueueUpload(file.absolutePath)
-        }.also { it.startWatching() }
-        Log.i(TAG, "watching: $folder")
+        val handler = Handler(Looper.getMainLooper())
+        observer = MediaStoreScreenshotObserver(this, handler) { id, uri, name ->
+            enqueueUpload(id, uri, name)
+        }.also { it.start() }
+        Log.i(TAG, "MediaStore observer started")
     }
 
-    private fun enqueueUpload(path: String) {
+    private fun enqueueUpload(id: Long, uri: Uri, displayName: String) {
         val req = OneTimeWorkRequestBuilder<UploadWorker>()
             .setInputData(
                 Data.Builder()
-                    .putString(UploadWorker.KEY_LOCAL_PATH, path)
+                    .putString(UploadWorker.KEY_URI, uri.toString())
+                    .putString(UploadWorker.KEY_DISPLAY_NAME, displayName)
                     .build()
             )
             .setConstraints(
@@ -84,13 +88,15 @@ class UploadForegroundService : Service() {
                     .build()
             )
             .build()
-        val unique = UploadWorker.UNIQUE_PREFIX + path.hashCode().toString()
-        WorkManager.getInstance(applicationContext).enqueueUniqueWork(unique, ExistingWorkPolicy.KEEP, req)
-        Log.i(TAG, "enqueued: $path (workId=$unique)")
+        // MediaStore _ID をユニークキーに → 同じ screenshot に対する重複 enqueue を抑止
+        val unique = UploadWorker.UNIQUE_PREFIX + "id-$id"
+        WorkManager.getInstance(applicationContext)
+            .enqueueUniqueWork(unique, ExistingWorkPolicy.KEEP, req)
+        Log.i(TAG, "enqueued: $displayName (id=$id)")
     }
 
     override fun onDestroy() {
-        observer?.stopWatching()
+        observer?.stop()
         observer = null
         super.onDestroy()
     }

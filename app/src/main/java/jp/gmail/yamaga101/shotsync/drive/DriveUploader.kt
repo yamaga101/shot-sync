@@ -9,14 +9,17 @@ import java.net.URLConnection
 object DriveUploader {
 
     /**
-     * `localFile` を `folderId` に新規アップロード。同名ファイルがあっても新規作成。
-     * Drive 側で重複しても OK (Drive は同名複数許容)。
+     * `localFile` を `folderId` に新規アップロード。
+     * `displayName` が指定されればそれを Drive 上の名前として使う (cache 用 prefix 等を
+     * 削除するため)。指定なしなら localFile.name をそのまま使う。
+     * 同名ファイルがあっても新規作成 (Drive は同名複数許容)。
      * 戻り値は Drive 側 file id。
      */
-    fun uploadFile(drive: Drive, localFile: File, folderId: String): String {
-        val mimeType = guessMime(localFile.name)
+    fun uploadFile(drive: Drive, localFile: File, folderId: String, displayName: String? = null): String {
+        val name = displayName ?: localFile.name
+        val mimeType = guessMime(name)
         val metadata = DriveFile().apply {
-            name = localFile.name
+            this.name = name
             parents = listOf(folderId)
         }
         val content = FileContent(mimeType, localFile)

@@ -31,7 +31,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 
 data class UploadEntry(
     val name: String,
@@ -107,14 +106,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * P1 確認用: /Pictures/Screenshots/ の最新 1 枚を即時 enqueue。
-     * Android 11+ scoped storage で File.listFiles() は使えないので MediaStore 経由で
-     * URI を取得 → ContentResolver で app cache dir にコピー → そのファイル path を
-     * UploadWorker に渡す。READ_MEDIA_IMAGES 権限必須。
+     * P1 確認用: MediaStore 上の最新 screenshot 1 枚を即時 enqueue。
+     * URI を UploadWorker に渡して worker 側で cache copy + upload + cleanup する。
+     * Drive 上のファイル名は displayName (prefix なし)。
      */
     fun uploadLatestScreenshot(context: Context, onResult: (String) -> Unit) {
         viewModelScope.launch {
-            // 1. 権限チェック
             val permErr = checkMediaPermission(context)
             if (permErr != null) {
                 onResult(permErr)
@@ -123,14 +120,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 return@launch
             }
-            // 2. MediaStore で latest screenshot を copy。例外を全部 catch して見える化。
-            val cached = withContext(Dispatchers.IO) {
-                runCatching { copyLatestScreenshotToCache(context) }
-                    .onFailure { Log.e("ShotSyncVM", "copy failed", it) }
+            val latest = withContext(Dispatchers.IO) {
+                runCatching { findLatestScreenshot(context) }
+                    .onFailure { Log.e("ShotSyncVM", "find latest failed", it) }
             }
-            val pair = cached.getOrNull()
-            if (pair == null) {
-                val msg = cached.exceptionOrNull()?.let { "${it::class.java.simpleName}: ${it.message}" }
+            val target = latest.getOrNull()
+            if (target == null) {
+                val msg = latest.exceptionOrNull()?.let { "${it::class.java.simpleName}: ${it.message}" }
                     ?: "Screenshots が見つかりません (RELATIVE_PATH に Screenshots/ 含む image 0 件)"
                 onResult(msg)
                 _state.value = _state.value.copy(
@@ -138,16 +134,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 return@launch
             }
-            val (file, displayName) = pair
+            val (id, uri, displayName) = target
             val req = OneTimeWorkRequestBuilder<UploadWorker>()
                 .setInputData(
-                    Data.Builder().putString(UploadWorker.KEY_LOCAL_PATH, file.absolutePath).build()
+                    Data.Builder()
+                        .putString(UploadWorker.KEY_URI, uri.toString())
+                        .putString(UploadWorker.KEY_DISPLAY_NAME, displayName)
+                        .build()
                 )
                 .setConstraints(
                     Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
                 )
                 .build()
-            val unique = UploadWorker.UNIQUE_PREFIX + "manual-" + displayName
+            val unique = UploadWorker.UNIQUE_PREFIX + "manual-id-$id"
             val wm = WorkManager.getInstance(context)
             wm.enqueueUniqueWork(unique, ExistingWorkPolicy.REPLACE, req)
             onResult("enqueue: $displayName")
@@ -181,33 +180,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun copyLatestScreenshotToCache(context: Context): Pair<File, String>? {
+    private fun findLatestScreenshot(context: Context): Triple<Long, Uri, String>? {
         val collection: Uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
         val projection = arrayOf(
             MediaStore.Images.Media._ID,
             MediaStore.Images.Media.DISPLAY_NAME,
-            MediaStore.Images.Media.RELATIVE_PATH,
-            MediaStore.Images.Media.DATE_MODIFIED,
         )
-        // RELATIVE_PATH の例: "Pictures/Screenshots/" / "DCIM/Screenshots/"
-        // SQL の LIMIT 句は Android の ContentResolver で SQLException を起こす版があるので
-        // sortOrder で並べて moveToFirst で先頭 1 件を取る。
         val selection = "${MediaStore.Images.Media.RELATIVE_PATH} LIKE ?"
         val args = arrayOf("%Screenshots/%")
         val sortOrder = "${MediaStore.Images.Media.DATE_MODIFIED} DESC"
-
         context.contentResolver.query(collection, projection, selection, args, sortOrder)?.use { c ->
             if (!c.moveToFirst()) return null
             val id = c.getLong(c.getColumnIndexOrThrow(MediaStore.Images.Media._ID))
             val name = c.getString(c.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME))
-            val itemUri = Uri.withAppendedPath(collection, id.toString())
-            val cacheFile = File(context.cacheDir, "upload-$id-$name").apply {
-                if (exists()) delete()
-            }
-            context.contentResolver.openInputStream(itemUri)?.use { input ->
-                cacheFile.outputStream().use { output -> input.copyTo(output) }
-            } ?: return null
-            return cacheFile to name
+                ?: "screenshot-$id.jpg"
+            val itemUri = android.content.ContentUris.withAppendedId(collection, id)
+            return Triple(id, itemUri, name)
         }
         return null
     }
