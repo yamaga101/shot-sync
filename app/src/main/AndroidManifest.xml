@@ -20,6 +20,9 @@
     <!-- For uploading large screenshots even on metered networks (user opt-in). -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- Foreground service が Doze で殺されないようにバッテリー最適化除外を request する -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
     <application
         android:name=".ShotSyncApp"
         android:allowBackup="true"

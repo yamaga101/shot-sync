@@ -43,6 +43,8 @@ data class UiState(
     val driveFolderId: String? = null,
     val autoSyncEnabled: Boolean = false,
     val recent: List<UploadEntry> = emptyList(),
+    val permissions: jp.gmail.yamaga101.shotsync.PermissionStatus =
+        jp.gmail.yamaga101.shotsync.PermissionStatus(false, false, false),
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -66,6 +68,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val context = getApplication<Application>()
         val account = DriveAuth.lastSignedInAccount(context)
         _state.value = _state.value.copy(signedInEmail = account?.email)
+    }
+
+    /** Activity の onResume などで呼んで、現在の OS-level 権限状態を反映する。 */
+    fun refreshPermissions(context: Context) {
+        val perms = jp.gmail.yamaga101.shotsync.Permissions.check(context)
+        _state.value = _state.value.copy(permissions = perms)
     }
 
     fun signInIntent(context: Context): Intent = DriveAuth.signInIntent(context)
