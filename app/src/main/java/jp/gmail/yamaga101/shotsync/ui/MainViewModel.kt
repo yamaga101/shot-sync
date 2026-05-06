@@ -42,6 +42,8 @@ data class UiState(
     val signedInEmail: String? = null,
     val driveFolderId: String? = null,
     val autoSyncEnabled: Boolean = false,
+    val syncCameraPhotos: Boolean = false,
+    val wifiOnly: Boolean = true,
     val recent: List<UploadEntry> = emptyList(),
     val permissions: jp.gmail.yamaga101.shotsync.PermissionStatus =
         jp.gmail.yamaga101.shotsync.PermissionStatus(false, false, false),
@@ -53,14 +55,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     init {
-        // Settings の変化を購読
         viewModelScope.launch {
-            combine(settings.driveFolderId, settings.autoSyncEnabled) { id, enabled -> id to enabled }
-                .collect { (id, enabled) ->
-                    _state.value = _state.value.copy(driveFolderId = id, autoSyncEnabled = enabled)
-                }
+            kotlinx.coroutines.flow.combine(
+                settings.driveFolderId,
+                settings.autoSyncEnabled,
+                settings.syncCameraPhotos,
+                settings.wifiOnly,
+            ) { id, auto, camera, wifi ->
+                listOf(id, auto, camera, wifi)
+            }.collect { values ->
+                @Suppress("UNCHECKED_CAST")
+                _state.value = _state.value.copy(
+                    driveFolderId = values[0] as String?,
+                    autoSyncEnabled = values[1] as Boolean,
+                    syncCameraPhotos = values[2] as Boolean,
+                    wifiOnly = values[3] as Boolean,
+                )
+            }
         }
-        // 既存 sign-in account を反映 (アプリ起動時)
         refreshSignInState()
     }
 
@@ -110,6 +122,29 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             settings.setAutoSyncEnabled(enabled)
             if (enabled) UploadForegroundService.start(context)
             else UploadForegroundService.stop(context)
+        }
+    }
+
+    /** Camera 同期 toggle。ON 中の service は新 spec で restart 必要。 */
+    fun toggleSyncCameraPhotos(context: Context, enabled: Boolean) {
+        viewModelScope.launch {
+            settings.setSyncCameraPhotos(enabled)
+            if (state.value.autoSyncEnabled) {
+                // 観測 spec が変わったので service restart で baseline 取り直し
+                UploadForegroundService.stop(context)
+                UploadForegroundService.start(context)
+            }
+        }
+    }
+
+    /** Wi-Fi 限定 toggle。次回 enqueue から制約反映。既存 work には影響なし。 */
+    fun toggleWifiOnly(context: Context, enabled: Boolean) {
+        viewModelScope.launch {
+            settings.setWifiOnly(enabled)
+            if (state.value.autoSyncEnabled) {
+                UploadForegroundService.stop(context)
+                UploadForegroundService.start(context)
+            }
         }
     }
 

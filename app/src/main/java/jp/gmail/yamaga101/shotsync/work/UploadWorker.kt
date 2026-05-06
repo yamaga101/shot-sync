@@ -42,7 +42,8 @@ class UploadWorker(
                 DiagnosticsLog.error("Worker", "abort: not signed in")
             }
 
-        val (folderId, _, _) = Settings(applicationContext).snapshot()
+        val snapshot = Settings(applicationContext).snapshot()
+        val folderId = snapshot.driveFolderId
         if (folderId.isNullOrBlank()) return@withContext fail("no folder id").also {
             DiagnosticsLog.error("Worker", "abort: no folder id")
         }

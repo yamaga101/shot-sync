@@ -20,7 +20,13 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import jp.gmail.yamaga101.shotsync.observer.MediaStoreScreenshotObserver
+import jp.gmail.yamaga101.shotsync.observer.WatchSpec
 import jp.gmail.yamaga101.shotsync.work.UploadWorker
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 /**
  * 端末再起動・アプリ swipe-out 後も /Pictures/Screenshots/ を watch するための
@@ -32,6 +38,8 @@ import jp.gmail.yamaga101.shotsync.work.UploadWorker
 class UploadForegroundService : Service() {
 
     private var observer: MediaStoreScreenshotObserver? = null
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var wifiOnly: Boolean = true
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -43,15 +51,23 @@ class UploadForegroundService : Service() {
             DiagnosticsLog.info(TAG, "startForeground OK")
         } catch (e: Exception) {
             DiagnosticsLog.error(TAG, "startForeground FAILED: ${e::class.simpleName}: ${e.message}")
-            // foreground 化に失敗するとサービスが即殺されるので stopSelf
             stopSelf()
             return
         }
-        try {
-            startObserving()
-            DiagnosticsLog.info(TAG, "observer registered")
-        } catch (e: Exception) {
-            DiagnosticsLog.error(TAG, "startObserving FAILED: ${e::class.simpleName}: ${e.message}")
+        // 設定を読んでから observer を起動
+        scope.launch {
+            try {
+                val s = jp.gmail.yamaga101.shotsync.Settings(this@UploadForegroundService).snapshot()
+                wifiOnly = s.wifiOnly
+                val spec = WatchSpec(
+                    includeScreenshots = true,  // auto sync ON 時は常に screenshots を見る
+                    includeCameraPhotos = s.syncCameraPhotos,
+                )
+                startObserving(spec)
+                DiagnosticsLog.info(TAG, "observer started (camera=${s.syncCameraPhotos}, wifiOnly=${s.wifiOnly})")
+            } catch (e: Exception) {
+                DiagnosticsLog.error(TAG, "startObserving FAILED: ${e::class.simpleName}: ${e.message}")
+            }
         }
     }
 
@@ -80,10 +96,10 @@ class UploadForegroundService : Service() {
         )
     }
 
-    private fun startObserving() {
+    private fun startObserving(spec: WatchSpec) {
         val handler = Handler(Looper.getMainLooper())
-        observer = MediaStoreScreenshotObserver(this, handler) { id, uri, name ->
-            DiagnosticsLog.info(TAG, "observer detected new screenshot id=$id name=$name")
+        observer = MediaStoreScreenshotObserver(this, handler, spec) { id, uri, name ->
+            DiagnosticsLog.info(TAG, "observer detected new image id=$id name=$name")
             enqueueUpload(id, uri, name)
         }.also { it.start() }
     }
@@ -98,7 +114,9 @@ class UploadForegroundService : Service() {
             )
             .setConstraints(
                 Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .setRequiredNetworkType(
+                        if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED
+                    )
                     .build()
             )
             .build()
@@ -112,6 +130,7 @@ class UploadForegroundService : Service() {
         DiagnosticsLog.info(TAG, "onDestroy")
         observer?.stop()
         observer = null
+        scope.cancel()
         super.onDestroy()
     }
 

@@ -240,18 +240,49 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
             )
         }
         if (!state.permissions.allGreen) {
-            Spacer(Modifier.height(4.dp))
             Text(
                 "上のセットアップを全部緑にしてから ON にできます。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
         } else {
-            Spacer(Modifier.height(4.dp))
             Text(
-                "新規スクショを検知 → Drive にinstant 送信。",
+                "Screenshots を検知 → Drive instant 送信。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        // 撮影写真 toggle
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("📷 撮影写真も同期", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "DCIM/Camera/ も watch (位置情報含む可能性あり)",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = state.syncCameraPhotos,
+                onCheckedChange = { vm.toggleSyncCameraPhotos(context, it) },
+                enabled = state.autoSyncEnabled,
+            )
+        }
+        // Wi-Fi のみ toggle
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("📶 Wi-Fi 接続時のみ", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "従量回線でのアップロードを抑制 (推奨 ON)",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = state.wifiOnly,
+                onCheckedChange = { vm.toggleWifiOnly(context, it) },
+                enabled = state.autoSyncEnabled,
             )
         }
     }
