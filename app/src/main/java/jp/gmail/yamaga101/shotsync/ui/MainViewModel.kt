@@ -1,10 +1,15 @@
 package jp.gmail.yamaga101.shotsync.ui
 
+import android.Manifest
 import android.app.Application
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.provider.MediaStore
+import android.util.Log
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.Constraints
@@ -109,14 +114,31 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun uploadLatestScreenshot(context: Context, onResult: (String) -> Unit) {
         viewModelScope.launch {
-            val cached = withContext(Dispatchers.IO) {
-                copyLatestScreenshotToCache(context)
-            }
-            if (cached == null) {
-                onResult("Screenshots フォルダに画像がありません (権限 / スコープ確認)")
+            // 1. 権限チェック
+            val permErr = checkMediaPermission(context)
+            if (permErr != null) {
+                onResult(permErr)
+                _state.value = _state.value.copy(
+                    recent = listOf(UploadEntry("(perm)", false, permErr)) + _state.value.recent.take(19)
+                )
                 return@launch
             }
-            val (file, displayName) = cached
+            // 2. MediaStore で latest screenshot を copy。例外を全部 catch して見える化。
+            val cached = withContext(Dispatchers.IO) {
+                runCatching { copyLatestScreenshotToCache(context) }
+                    .onFailure { Log.e("ShotSyncVM", "copy failed", it) }
+            }
+            val pair = cached.getOrNull()
+            if (pair == null) {
+                val msg = cached.exceptionOrNull()?.let { "${it::class.java.simpleName}: ${it.message}" }
+                    ?: "Screenshots が見つかりません (RELATIVE_PATH に Screenshots/ 含む image 0 件)"
+                onResult(msg)
+                _state.value = _state.value.copy(
+                    recent = listOf(UploadEntry("(scan)", false, msg)) + _state.value.recent.take(19)
+                )
+                return@launch
+            }
+            val (file, displayName) = pair
             val req = OneTimeWorkRequestBuilder<UploadWorker>()
                 .setInputData(
                     Data.Builder().putString(UploadWorker.KEY_LOCAL_PATH, file.absolutePath).build()
@@ -146,6 +168,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private fun checkMediaPermission(context: Context): String? {
+        val perm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_IMAGES
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+        return if (ContextCompat.checkSelfPermission(context, perm) == PackageManager.PERMISSION_GRANTED) {
+            null
+        } else {
+            "画像読み取り権限がありません。設定 → アプリ → shot-sync → 権限 → 画像 → 許可してください"
+        }
+    }
+
     private fun copyLatestScreenshotToCache(context: Context): Pair<File, String>? {
         val collection: Uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
         val projection = arrayOf(
@@ -155,9 +190,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             MediaStore.Images.Media.DATE_MODIFIED,
         )
         // RELATIVE_PATH の例: "Pictures/Screenshots/" / "DCIM/Screenshots/"
+        // SQL の LIMIT 句は Android の ContentResolver で SQLException を起こす版があるので
+        // sortOrder で並べて moveToFirst で先頭 1 件を取る。
         val selection = "${MediaStore.Images.Media.RELATIVE_PATH} LIKE ?"
         val args = arrayOf("%Screenshots/%")
-        val sortOrder = "${MediaStore.Images.Media.DATE_MODIFIED} DESC LIMIT 1"
+        val sortOrder = "${MediaStore.Images.Media.DATE_MODIFIED} DESC"
 
         context.contentResolver.query(collection, projection, selection, args, sortOrder)?.use { c ->
             if (!c.moveToFirst()) return null
